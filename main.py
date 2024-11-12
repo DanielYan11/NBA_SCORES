@@ -1,5 +1,7 @@
 import requests
 from datetime import datetime
+import tkinter as tk
+from tkinter import ttk
 
 # Set your RapidAPI host and key
 API_HOST = 'api-nba-v1.p.rapidapi.com'
@@ -10,128 +12,136 @@ POINTS_WEIGHT = 1.5
 ASSISTS_WEIGHT = 1.0
 REBOUNDS_WEIGHT = 1.0
 
-# Function to get the top players by team for a specific game
 def get_top_players_by_team(game_id):
+    """Returns top 3 players for each team by score (weighted by points, assists, and rebounds)."""
     url = f'https://{API_HOST}/players/statistics'
-    querystring = {"game": game_id}
     headers = {
         'x-rapidapi-host': API_HOST,
         'x-rapidapi-key': API_KEY
     }
+    querystring = {"game": str(game_id)}
+    response = requests.get(url, headers=headers, params=querystring)
+    stats = response.json().get('response', [])
+
+    # Organize player stats by team
+    teams = {}
+    for stat in stats:
+        team_name = stat['team']['nickname']
+        player_name = f"{stat['player']['firstname']} {stat['player']['lastname']}"
+        points = stat.get('points', 0) or 0
+        assists = stat.get('assists', 0) or 0
+        rebounds = stat.get('totReb', 0) or 0
+        score = points * POINTS_WEIGHT + assists * ASSISTS_WEIGHT + rebounds * REBOUNDS_WEIGHT
+        player_info = {
+            'name': player_name,
+            'pts': points,
+            'ast': assists,
+            'reb': rebounds,
+            'score': score
+        }
+        
+        if team_name not in teams:
+            teams[team_name] = []
+        teams[team_name].append(player_info)
+
+    # Sort players in each team by score and pick top 3
+    for team in teams:
+        teams[team] = sorted(teams[team], key=lambda x: x['score'], reverse=True)[:3]
     
-    try:
-        response = requests.get(url, headers=headers, params=querystring)
-        response.raise_for_status()
-        data = response.json()
+    return teams
 
-        # Organize players by team
-        teams = {}
-        for player_stat in data.get('response', []):
-            # Extract player and team information
-            player_info = player_stat.get('player', {})
-            firstname = player_info.get('firstname', 'Unknown')
-            lastname = player_info.get('lastname', 'Player')
-            player_name = f"{firstname} {lastname}"
-            
-            team_info = player_stat.get('team', {})
-            team_name = team_info.get('nickname', 'Unknown Team')
-            
-            # Extract statistics with default to 0 if missing
-            points = player_stat.get('points') or 0
-            assists = player_stat.get('assists') or 0
-            rebounds = player_stat.get('totReb') or 0
-            fg_percentage = player_stat.get('fgp', 0)
-            three_points_made = player_stat.get('tpm', 0)
-            three_points_attempted = player_stat.get('tpa', 0)
-            
-            # Convert fg_percentage to float if it's a string
-            try:
-                fg_percentage = float(fg_percentage)
-            except (TypeError, ValueError):
-                fg_percentage = 0
-
-            # Calculate weighted performance score
-            performance_score = (points * POINTS_WEIGHT) + (assists * ASSISTS_WEIGHT) + (rebounds * REBOUNDS_WEIGHT)
-            
-            # Add player to the corresponding team's list
-            if team_name not in teams:
-                teams[team_name] = []
-            teams[team_name].append({
-                'name': player_name,
-                'points': points,
-                'assists': assists,
-                'rebounds': rebounds,
-                'fg_percentage': fg_percentage,
-                'three_points_made': three_points_made,
-                'three_points_attempted': three_points_attempted,
-                'performance_score': performance_score
-            })
-
-        # Extract and sort top 3 players per team
-        top_teams = {}
-        for team, players in teams.items():
-            top_players = sorted(players, key=lambda x: x['performance_score'], reverse=True)[:3]
-            top_teams[team] = top_players
-
-        return top_teams
-
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-    except Exception as err:
-        print(f"An error occurred: {err}")
-
-# Function to get all games for today and retrieve top players for each game
-def get_all_games_top_players(date):
+def display_games(date):
     url = f'https://{API_HOST}/games'
     headers = {
         'x-rapidapi-host': API_HOST,
         'x-rapidapi-key': API_KEY
     }
     querystring = {"date": date}
-    
-    try:
-        response = requests.get(url, headers=headers, params=querystring)
-        response.raise_for_status()
-        games = response.json().get('response', [])
+    response = requests.get(url, headers=headers, params=querystring)
+    games = response.json().get('response', [])
 
-        # Display current date and time
-        current_datetime = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        print(f"Date & Time: {current_datetime}\n")
+    # Set up the main window with a scrollable frame
+    root = tk.Tk()
+    root.title("NBA Games and Top Players")
+    root.geometry("1000x600")  # Increased width to accommodate more columns
 
-        # Loop through each game and retrieve top players
-        for game in games:
-            game_id = game.get('id')
-            home_team_info = game.get('teams', {}).get('home', {})
-            away_team_info = game.get('teams', {}).get('visitors', {})
+    main_frame = tk.Frame(root)
+    main_frame.pack(fill="both", expand=True)
 
-            # Properly extract both team names and scores
-            home_team = home_team_info.get('nickname', 'Unknown Home Team')
-            away_team = away_team_info.get('nickname', 'Unknown Away Team')
-            home_score = game.get('scores', {}).get('home', {}).get('points', 'N/A')
-            away_score = game.get('scores', {}).get('visitors', {}).get('points', 'N/A')
+    # Create a canvas and scrollbar for the scrollable frame
+    canvas = tk.Canvas(main_frame)
+    scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
+    scrollable_frame = tk.Frame(canvas)
 
-            # Print game details and current score
-            print(f"Game: {home_team} vs {away_team}")
-            print(f"Score: {home_team} {home_score} - {away_team} {away_score}")
-            print("Top Players:")
+    scrollable_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
 
-            # Get top players for each team in the current game
-            top_players = get_top_players_by_team(game_id)
-            if top_players:
-                for team, players in top_players.items():
-                    print(f"\nTop 3 Players for {team}:")
-                    for player in players:
-                        fg_info = f", FG%: {player['fg_percentage']}%" if player['fg_percentage'] > 50 else ""
-                        three_point_info = f", 3PT: {player['three_points_made']}/{player['three_points_attempted']}"
-                        print(f"{player['name']}: Points: {player['points']}, Assists: {player['assists']}, "
-                              f"Rebounds: {player['rebounds']}{fg_info}{three_point_info}")
-            print("\n" + "-"*50)
+    canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
 
-    except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-    except Exception as err:
-        print(f"An error occurred: {err}")
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # Display each game in a button with a click animation in a grid layout
+    col_count = 4  # Set number of columns to 4
+    row = 0
+    col = 0
+
+    for game in games:
+        game_id = game.get('id')
+        home_team_info = game.get('teams', {}).get('home', {})
+        away_team_info = game.get('teams', {}).get('visitors', {})
+
+        home_team = home_team_info.get('nickname', 'Home Team')
+        away_team = away_team_info.get('nickname', 'Away Team')
+        home_score = game.get('scores', {}).get('home', {}).get('points', 'N/A')
+        away_score = game.get('scores', {}).get('visitors', {}).get('points', 'N/A')
+
+        # Get the top 3 players for each team
+        top_players = get_top_players_by_team(game_id)
+        
+        # Prepare button text with top players, using shortened stat names
+        button_text = f"Game: {home_team} vs {away_team}\nScore: {home_team} {home_score} - {away_team} {away_score}\n\n"
+        button_text += f"Top 3 Players for {home_team}:\n"
+        for player in top_players.get(home_team, []):
+            button_text += f"{player['name']}: pts {player['pts']}, ast {player['ast']}, reb {player['reb']}\n"
+        button_text += f"\nTop 3 Players for {away_team}:\n"
+        for player in top_players.get(away_team, []):
+            button_text += f"{player['name']}: pts {player['pts']}, ast {player['ast']}, reb {player['reb']}\n"
+
+        # Create a button for each game block
+        game_button = tk.Button(
+            scrollable_frame,
+            text=button_text,
+            font=("Arial", 10),
+            bg="lightgrey",
+            fg="black",
+            padx=10,
+            pady=10,
+            anchor="w",
+            justify="left",
+            relief="raised",
+            highlightthickness=2,
+            wraplength=200  # Wrap text to fit within the button width
+        )
+
+        # Add button animation effect
+        game_button.bind("<ButtonPress>", lambda e: e.widget.config(relief="sunken"))
+        game_button.bind("<ButtonRelease>", lambda e: e.widget.config(relief="raised"))
+
+        # Position the button in a grid layout
+        game_button.grid(row=row, column=col, padx=10, pady=5, sticky="nsew")
+
+        # Update row and column to fill in grid row by row
+        col += 1
+        if col >= col_count:
+            col = 0
+            row += 1
+
+    root.mainloop()
 
 # Run the function for today's date
 today_date = datetime.today().strftime('%Y-%m-%d')
-get_all_games_top_players(today_date)
+display_games(today_date)
