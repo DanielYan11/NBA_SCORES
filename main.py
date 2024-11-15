@@ -7,7 +7,7 @@ from io import BytesIO
 
 # Set your RapidAPI host and key
 API_HOST = 'api-nba-v1.p.rapidapi.com'
-API_KEY = '2a13a376ccmsha04475c0610e2d7p1d2679jsn9fd2690835e7'
+API_KEY = 
 
 POINTS_WEIGHT = 1.5
 ASSISTS_WEIGHT = 1.0
